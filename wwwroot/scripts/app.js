@@ -81,6 +81,9 @@ class App {
 
         renderFolderTree(data.path || "", data);
         renderListing(data);
+
+        // Re‑wire folder drop targets after tree re-render
+        initDragDrop(false, () => this.currentPath, () => this.loadDirectory());
     }
 }
 
