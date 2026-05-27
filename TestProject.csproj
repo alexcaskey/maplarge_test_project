@@ -6,6 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <Target Name="BuildClient" BeforeTargets="Build">
+    <Exec Command="npx tsc" />
+  </Target>
+
   <ItemGroup>
     <None Include="wwwroot\index.html" />
   </ItemGroup>

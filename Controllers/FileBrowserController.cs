@@ -1,10 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TestProject.Api.Services;
 using TestProject.Models;
 
 namespace TestProject.Controllers
 {
-
+    [Authorize]
     [ApiController]
     [Route("api/fs")]
     public class FileBrowserController : ControllerBase
@@ -16,59 +17,52 @@ namespace TestProject.Controllers
             _fs = fs;
         }
 
-        [HttpGet("{*path}")]
-        public async Task<IActionResult> HandlePath([FromRoute] string? path)
+        [HttpGet("folders/{**path}")]
+        public async Task<ActionResult<DirectoryBrowseResult>> HandleFolderPath([FromRoute] string? path, CancellationToken ct)
         {
-            path ??= "";
-
-            // Normalize slashes
-            path = path.Replace('/', '\\');
-
-            // Resolve full path
-            var fullPath = _fs.ResolveSafePath(path);
-
-            if (Directory.Exists(fullPath))
-            {
-                // directory so display the contents
-                var result = await _fs.BrowseAsync(path);
-                return Ok(result);
-            } else if (System.IO.File.Exists(fullPath))
-            {
-                // file so server it up
-                var file = await _fs.DownloadFileAsync(path);
-                return File(file.Stream, file.ContentType, file.FileName);
-            }
-
-            // Otherwise → not found
-            return NotFound(new { error = "Path not found." });
+            var result = await _fs.BrowseAsync(path ?? "", ct);
+            return result is null ? NotFound() : Ok(result);
         }
 
-        [HttpPost("move")]
-        public async Task<IActionResult> Move([FromBody] MoveRequest request)
+        [HttpGet("files/{**path}")]
+        public async Task<ActionResult<FileDownloadResult>> HandleFileDownload([FromRoute] string path, CancellationToken ct)
+        {  
+            var file = await _fs.DownloadFileAsync(path, ct);
+            return file is null ? NotFound() : File(file.Stream, file.ContentType, file.FileName); 
+        }
+
+        [HttpPost("files/{**path}")]
+        public async Task<IActionResult> Upload([FromRoute] string? path, IFormFile file, CancellationToken ct)
         {
-            await _fs.MoveFileAsync(request.Source ?? "", request.Target ?? "");
+            var newPath = path ?? "";
+            if (file == null || file.Length == 0)
+                return BadRequest("File is empty.");
+
+            using var stream = file.OpenReadStream();
+            await _fs.UploadFileAsync(newPath, stream, file.FileName, ct);
+            var locationPath  = $"{newPath.TrimEnd('/')}/{file.FileName}";
+            return CreatedAtAction(nameof(HandleFileDownload), new { path = locationPath }, null);
+        }
+
+        [HttpPatch("files/{**path}")]
+        public async Task<IActionResult> Move([FromRoute] string path, [FromBody] MoveRequest request, CancellationToken ct)
+        {
+            await _fs.MoveFileAsync(path, request.Target, ct);
             return Ok();
         }
 
-        [HttpPost("delete")]
-        public async Task<IActionResult> Delete([FromBody] DeleteRequest req)
+        [HttpDelete("files/{**path}")]
+        public async Task<IActionResult> Delete([FromRoute] string path, CancellationToken ct)
         {
-            await _fs.DeleteFileAsync(req.Path ?? "");
+            await _fs.DeleteFileAsync(path, ct);
             return Ok();
         }
 
         [HttpGet("search")]
-        public async Task<SearchResult> Search([FromQuery] string query)
+        public async Task<ActionResult<SearchResult>> Search([FromQuery] string query, CancellationToken ct)
         {
-            return await _fs.SearchAsync(query);
-        } 
-
-        [HttpPost("upload")]
-        public async Task<IActionResult> Upload([FromQuery] string? path, IFormFile file)
-        {
-            using var stream = file.OpenReadStream();
-            await _fs.UploadFileAsync(path ?? "", stream, file.FileName);
-            return Ok();
+            var result = await _fs.SearchAsync(query, ct);
+            return Ok(result);
         }
     }
 }

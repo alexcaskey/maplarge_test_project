@@ -1,5 +1,6 @@
 export function createLayout() {
     const root = document.getElementById("app") || document.body;
+
     root.innerHTML = `
 <header>
   <hgroup>

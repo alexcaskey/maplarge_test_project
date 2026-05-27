@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "lib": ["DOM", "DOM.Iterable", "ESNext"],
+        "target": "ES2020",
+        "module": "ES2020",
+        "outDir": "wwwroot/scripts",
+        "rootDir": "ClientApp/ts",
+        "strict": true,
+        "allowJs": true,
+        "checkJs": false,
+        "noImplicitAny": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "removeComments": true
+    },
+    "include": [
+        "ClientApp/ts/**/*"
+    ]
+}

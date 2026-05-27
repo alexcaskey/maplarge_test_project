@@ -3,6 +3,10 @@ using TestProject.Models;
 
 namespace TestProject.Api.Services
 {
+    /// <summary>
+    /// Service responsible for all file system operations, including browsing directories,
+    /// moving and deleting files, searching, and handling uploads/downloads.
+    /// </summary>
     public class FileSystemService : IFileSystemService
     {
         private readonly string _root;
@@ -40,8 +44,10 @@ namespace TestProject.Api.Services
         // Browse
         // ---------------------------------------------------------------------
 
-        public async Task<DirectoryBrowseResult> BrowseAsync(string relativePath)
+        public async Task<DirectoryBrowseResult> BrowseAsync(string relativePath, CancellationToken ct)
         {
+            ct.ThrowIfCancellationRequested();
+
             var fullPath = ResolveSafePath(relativePath);
 
             if (!Directory.Exists(fullPath))
@@ -49,29 +55,38 @@ namespace TestProject.Api.Services
 
             var dirInfo = new DirectoryInfo(fullPath);
 
+            ct.ThrowIfCancellationRequested();
             var folders = dirInfo.GetDirectories()
-                .Select(d => new FolderItem { Name = d.Name })
-                .ToList();
-
-            var files = dirInfo.GetFiles()
-                .Select(f => new FileItem
+                .Select(d =>
                 {
-                    Name = f.Name,
-                    Size = f.Length
-                })
+                    ct.ThrowIfCancellationRequested();
+                    return new FolderItem { Name = d.Name };
+                }
+                )
                 .ToList();
 
-            var (fileCount, folderCount) = await CountItemsAsync(relativePath);
-            var totalSize = await CalculateDirectorySizeAsync(relativePath);
+            ct.ThrowIfCancellationRequested();
+            var files = dirInfo.GetFiles()
+                .Select(f =>
+                {
+                    ct.ThrowIfCancellationRequested();
+                    return new FileItem
+                    {
+                        Name = f.Name,
+                        Size = f.Length
+                    };
+                }
+                )
+                .ToList();
 
             return new DirectoryBrowseResult
             {
                 Path = relativePath,
                 Folders = folders,
                 Files = files,
-                TotalFileCount = fileCount,
-                TotalFolderCount = folderCount,
-                TotalSize = totalSize
+                TotalFileCount = files.Count,
+                TotalFolderCount = folders.Count,
+                TotalSize = files.Sum(f => f.Size)
             };
         }
 
@@ -80,25 +95,31 @@ namespace TestProject.Api.Services
         // Search
         // ---------------------------------------------------------------------
 
-        public Task<SearchResult> SearchAsync(string query)
+        public Task<SearchResult> SearchAsync(string query, CancellationToken ct)
         {
+            ct.ThrowIfCancellationRequested();
+
             query = query?.Trim() ?? "";
             if (query.Length == 0)
                 return Task.FromResult(new SearchResult { Query = query });
 
-            var matches = Directory.EnumerateFileSystemEntries(_root, "*", SearchOption.AllDirectories)
-                .Where(path => File.Exists(path))
-                .Where(path => Path.GetRelativePath(_root, path).Contains(query, StringComparison.OrdinalIgnoreCase))
-                .Select(path =>
+            var matches = new List<FileItem>();
+
+            foreach (var path in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                if (Path.GetRelativePath(_root, path)
+                        .Contains(query, StringComparison.OrdinalIgnoreCase))
                 {
                     var info = new FileInfo(path);
-                    return new FileItem 
-                    { 
-                        Name = Path.GetRelativePath(_root, path), 
-                        Size = info.Exists ? info.Length : 0 
-                    };
-                })
-                .ToList();
+                    matches.Add(new FileItem
+                    {
+                        Name = Path.GetRelativePath(_root, path),
+                        Size = info.Length
+                    });
+                }
+            }
 
             return Task.FromResult(new SearchResult
             {
@@ -112,8 +133,10 @@ namespace TestProject.Api.Services
         // Upload
         // ---------------------------------------------------------------------
 
-        public async Task UploadFileAsync(string relativePath, Stream fileStream, string fileName)
+        public async Task UploadFileAsync(string relativePath, Stream fileStream, string fileName, CancellationToken ct)
         {
+            ct.ThrowIfCancellationRequested();
+
             var fullDir = ResolveSafePath(relativePath);
 
             if (Directory.Exists(fullDir))
@@ -122,8 +145,10 @@ namespace TestProject.Api.Services
                 if (File.Exists(fullFilePath))
                     File.Delete(fullFilePath); // Overwrite existing file   
 
+                ct.ThrowIfCancellationRequested();
+
                 using var output = File.Create(fullFilePath);
-                await fileStream.CopyToAsync(output);
+                await fileStream.CopyToAsync(output, ct);
             }
         }
 
@@ -132,14 +157,17 @@ namespace TestProject.Api.Services
         // Download
         // ---------------------------------------------------------------------
 
-        public Task<FileDownloadResult> DownloadFileAsync(string relativeFilePath)
+        public async Task<FileDownloadResult> DownloadFileAsync(string relativeFilePath, CancellationToken ct)
         {
             var fullPath = ResolveSafePath(relativeFilePath);
+            var memoryStream = new MemoryStream();
 
             if (!File.Exists(fullPath))
                 throw new FileNotFoundException(fullPath);
 
-            var stream = File.OpenRead(fullPath);
+            using var stream = File.OpenRead(fullPath);
+            await stream.CopyToAsync(memoryStream, ct);
+            memoryStream.Position = 0;
 
             // Detect MIME type
             var provider = new FileExtensionContentTypeProvider();
@@ -148,17 +176,22 @@ namespace TestProject.Api.Services
                 contentType = "application/octet-stream"; // fallback
             }
 
-            return Task.FromResult(new FileDownloadResult
+            return new FileDownloadResult
             {
-                Stream = stream,
+                Stream = memoryStream,
                 FileName = Path.GetFileName(fullPath),
                 ContentType = contentType
-            });
+            };
         }
 
+        // ---------------------------------------------------------------------
+        // Move File
+        // ---------------------------------------------------------------------
 
-        public Task MoveFileAsync(string sourceRelativePath, string targetRelativePath)
+        public Task MoveFileAsync(string sourceRelativePath, string targetRelativePath, CancellationToken ct)
         {
+            ct.ThrowIfCancellationRequested();
+
             var sourceFullPath = ResolveSafePath(sourceRelativePath);
             var targetFullPath = ResolveSafePath(targetRelativePath);
 
@@ -168,17 +201,22 @@ namespace TestProject.Api.Services
             if (!Directory.Exists(targetFullPath))
                 throw new DirectoryNotFoundException("Target path not found.");
 
-            var sourceFile = new FileInfo(sourceFullPath);  
-            var targetDir = targetFullPath + "\\" + sourceFile.Name;
+            var sourceFile = new FileInfo(sourceFullPath);
+            var targetDir = Path.Combine(targetFullPath, sourceFile.Name);
 
-            if (File.Exists(sourceFullPath) && Directory.Exists(targetFullPath)) 
-                Directory.Move(sourceFullPath, targetDir);
+            Directory.Move(sourceFullPath, targetDir);
 
             return Task.CompletedTask;
         }
 
-        public Task DeleteFileAsync(string relativePath)
+        // ---------------------------------------------------------------------
+        // Delete File
+        // ---------------------------------------------------------------------
+
+        public Task DeleteFileAsync(string relativePath, CancellationToken ct)
         {
+            ct.ThrowIfCancellationRequested();
+
             var fullPath = ResolveSafePath(relativePath);
 
             if (File.Exists(fullPath))
@@ -188,33 +226,9 @@ namespace TestProject.Api.Services
             else
             {
                 throw new FileNotFoundException("Path not found.", fullPath);
-            } 
-            
-            return Task.CompletedTask;  
-        }
+            }
 
-        // ---------------------------------------------------------------------
-        // Metadata
-        // ---------------------------------------------------------------------
-
-        public Task<long> CalculateDirectorySizeAsync(string relativePath)
-        {
-            var fullPath = ResolveSafePath(relativePath);
-
-            long size = Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories)
-                .Sum(f => new FileInfo(f).Length);
-
-            return Task.FromResult(size);
-        }
-
-        public Task<(int fileCount, int folderCount)> CountItemsAsync(string relativePath)
-        {
-            var fullPath = ResolveSafePath(relativePath);
-
-            int fileCount = Directory.EnumerateFiles(fullPath, "*", SearchOption.TopDirectoryOnly).Count();
-            int folderCount = Directory.EnumerateDirectories(fullPath, "*", SearchOption.TopDirectoryOnly).Count();
-
-            return Task.FromResult((fileCount, folderCount));
+            return Task.CompletedTask;
         }
     }
 }

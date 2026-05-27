@@ -5,62 +5,68 @@ namespace TestProject.Api.Services
 
     public interface IFileSystemService
     {
-        // Browsing --------------------------------------------------------------
-
         /// <summary>
         /// Returns folder contents (files + subfolders) and metadata such as
         /// total counts and total size.
         /// </summary>
-        Task<DirectoryBrowseResult> BrowseAsync(string relativePath);
+        /// <param name="relativePath">Path relative to the root directory</param>
+        /// <param name="ct">Cancellation token</param>
+        /// <returns></returns>
+        Task<DirectoryBrowseResult> BrowseAsync(string relativePath, CancellationToken ct);
 
-        Task MoveFileAsync(string sourceRelativePath, string targetRelativePath);
+        /// <summary>
+        /// Moves a file from source to target path. Both paths are relative to the root
+        /// </summary>
+        /// <param name="sourceRelativePath"></param>
+        /// <param name="targetRelativePath"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        Task MoveFileAsync(string sourceRelativePath, string targetRelativePath, CancellationToken ct);
 
-        Task DeleteFileAsync(string relativePath);
-
-        // Searching -------------------------------------------------------------
+        /// <summary>
+        /// Deletes the specified file. Path is relative to the root directory.
+        /// </summary>
+        /// <param name="relativePath"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        Task DeleteFileAsync(string relativePath, CancellationToken ct);
 
         /// <summary>
         /// Recursively searches the root directory for files or folders
         /// matching the query text.
         /// </summary>
-        Task<SearchResult> SearchAsync(string query);
+        /// <param name="query">Search query text</param>
+        /// <param name="ct">Cancellation token</param>
+        /// <returns></returns>
+        Task<SearchResult> SearchAsync(string query, CancellationToken ct);
 
-
-        // Upload ---------------------------------------------------------------
 
         /// <summary>
         /// Saves an uploaded file into the specified directory.
         /// </summary>
-        Task UploadFileAsync(string relativePath, Stream fileStream, string fileName);
+        /// <param name="relativePath">Target directory path relative to the root</param>
+        /// <param name="fileStream">File content stream</param>
+        /// <param name="fileName">Original file name (used for saving the file with the same name)</param>
+        /// <param name="ct">Cancellation token</param>
+        /// <returns></returns>
+        Task UploadFileAsync(string relativePath, Stream fileStream, string fileName, CancellationToken ct);
 
-
-        // Download -------------------------------------------------------------
 
         /// <summary>
         /// Opens a file stream for downloading.
         /// </summary>
-        Task<FileDownloadResult> DownloadFileAsync(string relativeFilePath);
+        /// <param name="relativeFilePath">Path to the file to download, relative to the root directory</param>
+        /// <param name="ct">Cancellation token</param>
+        /// <returns></returns>
+        Task<FileDownloadResult> DownloadFileAsync(string relativeFilePath, CancellationToken ct);
 
-
-        // Metadata -------------------------------------------------------------
-
-        /// <summary>
-        /// Calculates the total size of a directory (recursive).
-        /// </summary>
-        Task<long> CalculateDirectorySizeAsync(string relativePath);
-
-        /// <summary>
-        /// Counts files and folders inside a directory (recursive).
-        /// </summary>
-        Task<(int fileCount, int folderCount)> CountItemsAsync(string relativePath);
-
-
-        // Validation / Safety --------------------------------------------------
 
         /// <summary>
         /// Ensures the requested path stays inside the configured root directory.
         /// Throws if invalid.
         /// </summary>
+        /// <param name="relativePath">Path relative to the root directory</param>
+        /// <returns>Resolved absolute path that can be safely accessed</returns>
         string ResolveSafePath(string relativePath);
     }
 }
