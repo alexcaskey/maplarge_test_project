@@ -1,4 +1,7 @@
-public class DeleteRequest
+namespace TestProject.Models
 {
-    public string? Path { get; set; }
+    public class DeleteRequest
+    {
+        public string Path { get; set; } = "";
+    }
 }

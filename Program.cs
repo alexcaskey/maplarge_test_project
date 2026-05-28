@@ -35,8 +35,10 @@ namespace TestProject
             builder.Services.AddControllers();
 
             var app = builder.Build();
-
             app.UseHttpsRedirection();
+            app.UseStaticFiles();
+
+            app.UseRouting();
             app.UseAuthentication();
             app.UseCustomAuthorization();
             app.UseAuthorization();
@@ -44,7 +46,6 @@ namespace TestProject
             app.UseMiddleware<ExceptionHandler>();
             app.UseMiddleware<RouteNotFoundHandler>();
 
-            app.UseStaticFiles();
             app.MapControllers();
             app.Run();
         }

@@ -1,4 +1,7 @@
-public class MoveRequest
+namespace TestProject.Models
 {
-        public required string Target { get; set; }
+        public class MoveRequest
+        {
+                public string Target { get; set; } = "";
+        }
 }
